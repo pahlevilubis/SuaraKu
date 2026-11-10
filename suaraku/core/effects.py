@@ -111,8 +111,12 @@ ROBOT = ("afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)'"
          ":win_size=512:overlap=0.75")
 
 
-def build_voice_filters(s: VoiceSettings, use_rubberband: bool) -> list[str]:
-    """Daftar filter audio FFmpeg (urutan penting) untuk pengaturan suara."""
+def build_voice_filters(s: VoiceSettings, use_rubberband: bool, realtime: bool = False) -> list[str]:
+    """Daftar filter audio FFmpeg (urutan penting) untuk pengaturan suara.
+
+    realtime=True dipakai Mode Live: tanpa filter yang butuh "melihat ke depan"
+    (loudnorm menahan suara ±3 detik), diganti kompresor ringan.
+    """
     f: list[str] = [f"aresample={SAMPLE_RATE}"]
     if s.highpass > 0:
         f.append(f"highpass=f={int(s.highpass)}")
@@ -139,7 +143,9 @@ def build_voice_filters(s: VoiceSettings, use_rubberband: bool) -> list[str]:
     rv = reverb_filter(s.reverb)
     if rv:
         f.append(rv)
-    if s.normalize:
+    if s.normalize and realtime:
+        f.append("acompressor=threshold=-30dB:ratio=3:attack=5:release=200:makeup=4")
+    elif s.normalize:
         f.append("loudnorm=I=-16:TP=-1.5:LRA=11")
         f.append(f"aresample={SAMPLE_RATE}")
     if abs(s.volume - 1.0) > 0.01:
@@ -149,5 +155,5 @@ def build_voice_filters(s: VoiceSettings, use_rubberband: bool) -> list[str]:
     return f
 
 
-def build_voice_filter(s: VoiceSettings, use_rubberband: bool) -> str:
-    return ",".join(build_voice_filters(s, use_rubberband))
+def build_voice_filter(s: VoiceSettings, use_rubberband: bool, realtime: bool = False) -> str:
+    return ",".join(build_voice_filters(s, use_rubberband, realtime))

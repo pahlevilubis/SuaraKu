@@ -19,8 +19,10 @@ from .common import FuncThread, TaskPanel, scroll_page
 from .page_about import AboutPage
 from .page_convert import ConvertPage
 from .page_effect import EffectPage
+from .page_live import LivePage
 from .page_merge import MergePage
 from .page_record import RecordPage
+from .page_transcribe import TranscribePage
 from .page_tts import TtsPage
 
 
@@ -48,15 +50,19 @@ class MainWindow(QMainWindow):
         self.convert = ConvertPage()
         self.record = RecordPage()
         self.effect = EffectPage()
+        self.transcribe = TranscribePage()
         self.tts = TtsPage()
         self.merge = MergePage()
+        self.live = LivePage()
         self.about = AboutPage()
         pages = [
             ("Konversi", "MP4 → MP3 & format lain", self.convert),
-            ("Rekam Suara", "Mic + teleprompter", self.record),
+            ("Rekam Suara", "Manual / otomatis + teleprompter", self.record),
             ("Efek Suara", "Penyiar, Macho, Husky…", self.effect),
+            ("Suara → Teks", "Ketik otomatis isi rekaman/video", self.transcribe),
             ("Suara AI", "Naskah dibacakan AI", self.tts),
             ("Gabung Video", "Video + narasi + musik", self.merge),
+            ("Mode Live", "Ganti suara saat telepon", self.live),
             ("Tentang", "Versi & tips", self.about),
         ]
 
@@ -103,7 +109,7 @@ class MainWindow(QMainWindow):
         cl.addWidget(side)
         cl.addWidget(self.stack, 1)
         self.setCentralWidget(central)
-        self.record.setMinimumHeight(860)
+        self.record.setMinimumHeight(1180)
 
         # Alur antar menu
         self.record.use_in_effect.connect(lambda p: self._goto(self.effect, self.effect.set_file, p))
@@ -129,6 +135,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):  # noqa: N802
         self.record.shutdown()
+        self.live.shutdown()
         for panel in self.findChildren(TaskPanel):
             if panel.thread:
                 panel.thread.cancel()

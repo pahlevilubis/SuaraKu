@@ -170,7 +170,40 @@ def selftest(report: str) -> int:
             return getattr(edge_tts, "__version__", "")
 
         def _mics():
-            return f"{len(QMediaDevices.audioInputs())} mic terdeteksi (di server build wajar 0)"
+            return (f"{len(QMediaDevices.audioInputs())} mic, "
+                    f"{len(QMediaDevices.audioOutputs())} output (di server build wajar 0)")
+
+        def _live():
+            from suaraku.core import live
+            fin = live.PcmFormat(48000, 1, "s16le")
+            fout = live.PcmFormat(48000, 2, "f32le")
+            for key in ("penyiar", "macho"):
+                got: list = []
+                p = live.LiveProcessor(effects.preset_settings(key), fin, fout, got.append)
+                p.start()
+                one = (b"\x00\x10\x00\xf0" * 240) * 100   # 1 detik gelombang kotak
+                for k in range(0, len(one), 1920):
+                    p.feed(one[k:k + 1920])
+                p.drain()
+                secs = sum(len(b) for b in got) / fout.bytes_per_sec
+                if not 0.8 < secs < 1.4:
+                    raise RuntimeError(f"{key}: keluaran {secs:.2f} detik")
+            return "ok"
+
+        def _stt():
+            from suaraku.core import stt
+            path = stt.model_path("base")
+            if not path:
+                raise RuntimeError("model whisper-base tidak ikut terpasang")
+            speech = os.environ.get("SUARAKU_TEST_SPEECH")
+            if speech and not os.path.exists(speech):
+                speech = None
+            t = stt.transcribe(speech or src_wav, "base", "id" if speech else None)
+            if speech:
+                low = t.text.lower()
+                if not any(w in low for w in ("selamat pagi", "aplikasi", "perkenalkan")):
+                    raise RuntimeError(f"transkrip meleset: {t.text!r}")
+            return f"model {path} · teks: {t.text[:80]!r}"
 
         check("FFmpeg ditemukan", _ff)
         check("Filter audio", _filters)
@@ -181,7 +214,9 @@ def selftest(report: str) -> int:
         check("Gabung video", _merge)
         check("Pemutar audio/video", _player)
         check("Modul suara AI", _edge)
-        check("Mikrofon", _mics)
+        check("Perangkat audio", _mics)
+        check("Mode Live (pemroses real-time)", _live)
+        check("Suara → teks (Whisper)", _stt)
     except Exception:
         ok = False
         log("[GAGAL] persiapan\n" + traceback.format_exc())

@@ -13,7 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from suaraku.core import effects, jobs, tools  # noqa: E402
+import os  # noqa: E402
+
+from suaraku.core import effects, jobs, live, stt, tools, vad  # noqa: E402
 
 TMP = Path(tempfile.mkdtemp(prefix="suaraku-test-"))
 
@@ -168,6 +170,84 @@ def test_cancel():
         r.run(jobs.merge(o))
     except jobs.JobCancelled:
         assert not Path(o.output).exists()
+
+
+def test_vad_gate():
+    import array
+    sr, bps = 48000, 96000          # mono s16
+    chunk = 960                     # 10 ms
+    def tone(amp):
+        return array.array("h", [int(amp * 32767)] * (chunk // 2)).tobytes()
+    g = vad.VoiceGate(bps, threshold_db=-30, stop_after=1.0, preroll=0.3, tail=0.2)
+    out, events = bytearray(), []
+    plan = [0.001] * 100 + [0.5] * 150 + [0.001] * 40 + [0.5] * 50 + [0.001] * 200
+    for amp in plan:
+        data, ev = g.feed(tone(amp), amp)
+        out += data
+        if ev:
+            events.append((ev, len(out)))
+    assert [e for e, _ in events] == ["start", "stop"], events
+    keep = g.keep_bytes()
+    secs = keep / bps
+    # 0,3 s pre-roll + 1,5 s suara + 0,4 s jeda + 0,5 s suara + 0,2 s ekor ≈ 2,9 s
+    assert 2.7 < secs < 3.1, secs
+    assert keep % 2 == 0
+
+
+def test_compact_silence():
+    gap = _make("gap.wav", "-f", "lavfi", "-i", "sine=f=300:d=1", "-f", "lavfi", "-i",
+                "anullsrc=r=48000:cl=mono:d=3", "-f", "lavfi", "-i", "sine=f=300:d=1",
+                "-filter_complex", "[0][1][2]concat=n=3:v=0:a=1")
+    raw = TMP / "gap.raw"
+    subprocess.run([tools.ffmpeg_path(), "-y", "-loglevel", "error", "-i", gap, "-f", "s16le",
+                    "-ar", "48000", "-ac", "1", str(raw)], check=True)
+    i = run(jobs.raw_to_wav(str(raw), str(TMP / "gap_compact.wav"), 48000, 1, "s16le",
+                            compact_silence=True))
+    assert 2.2 < i.duration < 4.0, i.duration
+
+
+def test_live_processor_all_presets():
+    import array
+    fmt_in = live.PcmFormat(48000, 1, "s16le")
+    fmt_out = live.PcmFormat(48000, 2, "s16le")      # mic virtual biasanya stereo
+    one_sec = array.array("h", [int(8000 * ((i // 60) % 2 * 2 - 1)) for i in range(48000)]).tobytes()
+    for key in live.LIVE_PRESETS:
+        got = []
+        errs = []
+        p = live.LiveProcessor(effects.preset_settings(key), fmt_in, fmt_out, got.append, errs.append)
+        p.start()
+        for k in range(0, len(one_sec), 1920):
+            p.feed(one_sec[k:k + 1920])
+        p.drain()
+        n = sum(len(b) for b in got)
+        assert not errs, (key, errs)
+        assert all(len(b) % fmt_out.bytes_per_frame == 0 for b in got), key
+        secs = n / fmt_out.bytes_per_sec
+        assert 0.85 < secs < 1.3, (key, secs)
+
+
+def test_srt_format():
+    t = stt.Transcript(segments=[stt.Segment(0, 1.5, " Halo semua."),
+                                 stt.Segment(3.7, 3661.25, "Apa kabar?")])
+    srt = t.to_srt()
+    assert "1\n00:00:00,000 --> 00:00:01,500\nHalo semua." in srt
+    assert "01:01:01,250" in srt
+    assert t.paragraphs() == "Halo semua.\n\nApa kabar?"
+
+
+def test_stt_real_speech():
+    """Jalan di GitHub: suara contoh dibuat dengan suara AI, lalu diketik ulang oleh Whisper."""
+    speech = os.environ.get("SUARAKU_TEST_SPEECH")
+    if not speech or not os.path.exists(speech) or not stt.model_path("base"):
+        print("     (lewati: tidak ada contoh suara / model)")
+        return
+    seen = []
+    t = stt.transcribe(speech, "base", "id", on_progress=seen.append)
+    text = t.text.lower()
+    print("     transkrip:", t.text)
+    assert seen and seen[-1] == 1.0
+    assert any(w in text for w in ("selamat pagi", "aplikasi", "perkenalkan")), text
+    assert t.to_srt().startswith("1\n00:00:")
 
 
 if __name__ == "__main__":

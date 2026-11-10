@@ -15,8 +15,8 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
-    QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar,
-    QPushButton, QScrollArea, QSizePolicy, QSlider, QVBoxLayout, QWidget,
+    QAbstractButton, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
+    QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSlider, QVBoxLayout, QWidget,
 )
 
 from ..core import jobs, tools
@@ -69,6 +69,26 @@ def clean_temp() -> None:
                 f.unlink()
             except OSError:
                 pass
+
+
+def bind_setting(widget, key: str, default) -> None:
+    """Ingat pilihan user (centang, pilihan daftar, slider) antar sesi."""
+    st = settings()
+    val = st.value(key, default)
+    if isinstance(widget, QAbstractButton):
+        widget.setChecked(str(val).lower() in ("true", "1"))
+        widget.toggled.connect(lambda v: settings().setValue(key, bool(v)))
+    elif isinstance(widget, QComboBox):
+        idx = widget.findData(val)
+        if idx >= 0:
+            widget.setCurrentIndex(idx)
+        widget.currentIndexChanged.connect(lambda _i: settings().setValue(key, widget.currentData()))
+    elif isinstance(widget, LabeledSlider):
+        try:
+            widget.setValue(float(val))
+        except (TypeError, ValueError):
+            widget.setValue(float(default))
+        widget.valueChanged.connect(lambda v: settings().setValue(key, v))
 
 
 def stamp() -> str:

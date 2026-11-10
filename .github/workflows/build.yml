@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -65,29 +65,46 @@ jobs:
           & vendor/ffmpeg/ffmpeg.exe -hide_banner -version | Select-Object -First 1
           & vendor/ffmpeg/ffmpeg.exe -hide_banner -filters | Select-String "rubberband"
 
+      - name: Unduh model Whisper (suara jadi teks)
+        shell: pwsh
+        run: |
+          python -c "from faster_whisper.utils import download_model; print(download_model('base', output_dir='vendor/models/whisper-base'))"
+          Get-ChildItem vendor/models/whisper-base | Format-Table Name, Length
+
+      - name: Buat contoh suara untuk tes transkrip
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          python -c "import asyncio, edge_tts; asyncio.run(edge_tts.Communicate('Selamat pagi semuanya. Hari ini saya mau memperkenalkan aplikasi baru buatan saya sendiri.', 'id-ID-ArdiNeural').save('vendor/speech.mp3'))"
+          Get-Item vendor/speech.mp3
+
       - name: Tes mesin (pakai FFmpeg Windows)
         env:
           SUARAKU_FFMPEG: vendor/ffmpeg/ffmpeg.exe
           SUARAKU_FFPROBE: vendor/ffmpeg/ffprobe.exe
+          SUARAKU_MODELS: vendor/models
+          SUARAKU_TEST_SPEECH: vendor/speech.mp3
           PYTHONUTF8: "1"
         run: python tests/test_core.py
 
       - name: Build exe (PyInstaller)
         run: pyinstaller packaging/suaraku.spec --noconfirm --clean
 
-      - name: Masukkan FFmpeg ke paket
+      - name: Masukkan FFmpeg & model ke paket
         shell: pwsh
         run: |
           Copy-Item -Recurse vendor/ffmpeg dist/SuaraKu/ffmpeg
+          Copy-Item -Recurse vendor/models dist/SuaraKu/models
           "{0:N0} MB" -f ((Get-ChildItem dist/SuaraKu -Recurse | Measure-Object Length -Sum).Sum / 1MB)
 
       - name: Cek mandiri exe (selftest)
         shell: pwsh
         run: |
           $report = Join-Path $PWD "selftest.txt"
+          $env:SUARAKU_TEST_SPEECH = Join-Path $PWD "vendor\speech.mp3"
           $p = Start-Process -FilePath "dist\SuaraKu\SuaraKu.exe" -ArgumentList @("--selftest", "`"$report`"") -PassThru
           $null = $p.Handle
-          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "Selftest macet (lebih dari 5 menit)" }
+          if (-not $p.WaitForExit(600000)) { $p.Kill(); throw "Selftest macet (lebih dari 10 menit)" }
           if (Test-Path $report) { Get-Content $report } else { Write-Warning "Laporan selftest tidak ada" }
           $log = Join-Path $env:TEMP "SuaraKu-log.txt"
           if (Test-Path $log) { Write-Host "--- log ---"; Get-Content $log }

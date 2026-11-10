@@ -46,13 +46,14 @@ class AboutPage(QWidget):
             "4. Di Gabung Video, hapus suara asli, pasang narasi, tambah musik pelan. Centang "
             "720p supaya ringan diunggah.",
             "5. Kalau malas rekam, pakai Suara AI.",
+            "6. Butuh caption? Menu Suara → Teks membuat teks dan subtitle (.srt) dari videomu.",
         ]:
             l2.addWidget(hint(t))
         lay.addWidget(c2)
 
         c3, l3 = card("Lisensi")
         l3.addWidget(hint("SuaraKu memakai FFmpeg (ffmpeg.org, lisensi GPL), Qt/PySide6 (LGPL), "
-                          "dan edge-tts. Folder ffmpeg di dalam folder instalasi berisi program "
-                          "FFmpeg asli."))
+                          "edge-tts, faster-whisper + model Whisper (MIT). Mode Live memakai "
+                          "VB-CABLE dari vb-audio.com (dipasang terpisah)."))
         lay.addWidget(c3)
         lay.addStretch(1)

@@ -294,10 +294,19 @@ def merge(o: MergeOptions, info: tools.MediaInfo | None = None,
 
 # ---------------------------------------------------------------- rekaman mentah → WAV
 
-def raw_to_wav(raw: str, dst: str, sample_rate: int, channels: int, sample_fmt: str) -> Job:
+# Rapatkan jeda hening panjang (> 0,8 detik) supaya narasi lebih padat.
+COMPACT_SILENCE = ("silenceremove=stop_periods=-1:stop_duration=0.8"
+                   ":stop_threshold=-45dB:stop_silence=0.4")
+
+
+def raw_to_wav(raw: str, dst: str, sample_rate: int, channels: int, sample_fmt: str,
+               compact_silence: bool = False) -> Job:
     """sample_fmt: s16le / s32le / f32le / u8."""
     args = [*COMMON, "-f", sample_fmt, "-ar", str(sample_rate), "-ac", str(channels),
-            "-i", raw, "-c:a", "pcm_s16le", dst]
+            "-i", raw]
+    if compact_silence:
+        args += ["-af", COMPACT_SILENCE]
+    args += ["-c:a", "pcm_s16le", dst]
     size = os.path.getsize(raw) if os.path.exists(raw) else 0
     bps = {"s16le": 2, "s32le": 4, "f32le": 4, "u8": 1}.get(sample_fmt, 2)
     dur = size / float(bps * channels * sample_rate) if size else 0.0

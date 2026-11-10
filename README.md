@@ -8,10 +8,12 @@ by **Pahlevi Lubis**.
 | Menu | Gunanya |
 |---|---|
 | **Konversi** | MP4 → MP3, M4A, WAV, OGG, FLAC; video ke MP4 / MP4 kecil 720p / MP4 tanpa suara. Bisa banyak file sekaligus dan potong (trim). |
-| **Rekam Suara** | Rekam narasi dari mic, hitung mundur 3 detik, indikator volume, **teleprompter** bergulir, dan video referensi diputar tanpa suara supaya narasi pas dengan gambar. |
+| **Rekam Suara** | Rekam narasi dari mic — **manual** atau **otomatis** (mulai saat kamu bicara, berhenti sendiri saat diam). Teleprompter bergulir, video referensi, rapatkan jeda hening, lalu otomatis **beri efek** dan **ketik jadi teks**. |
 | **Efek Suara** | Preset **Penyiar Radio, Macho, Husky/Sexy, Podcast, Bersih**, Gema Aula, Telepon, Robot, Raksasa, Tupai — plus atur manual (nada, bass, kejelasan, treble, gema, pembersih noise). Bisa dengar contoh sebelum/sesudah, dan bisa langsung ke suara di dalam video. |
+| **Suara → Teks** | Ubah rekaman/voice note/video jadi tulisan secara offline (Whisper), plus subtitle `.srt`. Mesin Cepat sudah terpasang, mesin Akurat bisa diunduh. |
 | **Suara AI** | Ketik naskah → dibacakan suara AI (Indonesia & Inggris). Butuh internet. |
 | **Gabung Video** | Hapus suara asli video, pasang narasi (bisa diberi efek & digeser waktunya), tambah musik latar yang otomatis mengecil saat ada narasi, opsi 720p. |
+| **Mode Live** | Ganti suara secara langsung saat telepon/video call di WhatsApp Desktop, Teams, Zoom, Meet. Butuh mic virtual gratis [VB-CABLE](https://vb-audio.com/Cable/) (pasang sekali). Jeda sekitar 0,1–0,25 detik; pakai earphone. |
 
 ## Cara download & pasang
 
@@ -51,4 +53,4 @@ packaging/              resep PyInstaller + skrip installer Inno Setup
 
 ## Lisensi pihak ketiga
 
-FFmpeg (GPL, ffmpeg.org), Qt/PySide6 (LGPL), edge-tts (GPL-3.0).
+FFmpeg (GPL, ffmpeg.org), Qt/PySide6 (LGPL), edge-tts (GPL-3.0), faster-whisper & model Whisper (MIT). VB-CABLE (vb-audio.com) dipasang terpisah oleh pengguna.
