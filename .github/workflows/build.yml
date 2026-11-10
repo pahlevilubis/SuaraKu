@@ -1,0 +1,129 @@
+name: Build SuaraKu (Windows)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Tentukan versi
+        shell: pwsh
+        run: |
+          $v = "1.0.$env:GITHUB_RUN_NUMBER"
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "# Dibuat otomatis oleh GitHub Actions.`nVERSION = `"$v`"" | Out-File suaraku/_version.py -Encoding utf8
+          Get-Content suaraku/_version.py
+
+      - name: Pasang paket Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt "pyinstaller>=6.11"
+          pip list
+
+      - name: Unduh FFmpeg
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $urls = @(
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          )
+          $ok = $false
+          foreach ($u in $urls) {
+            try {
+              Write-Host "Mengunduh $u"
+              Invoke-WebRequest $u -OutFile ffmpeg.zip -UseBasicParsing
+              $ok = $true; break
+            } catch { Write-Warning "Gagal: $_" }
+          }
+          if (-not $ok) { throw "FFmpeg tidak bisa diunduh" }
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_dl -Force
+          $bin = Get-ChildItem ffmpeg_dl -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          New-Item -ItemType Directory -Force vendor/ffmpeg | Out-Null
+          Copy-Item $bin.FullName vendor/ffmpeg/
+          Copy-Item (Join-Path $bin.DirectoryName "ffprobe.exe") vendor/ffmpeg/
+          $lic = Get-ChildItem ffmpeg_dl -Recurse -Include LICENSE*, COPYING* | Select-Object -First 1
+          if ($lic) { Copy-Item $lic.FullName vendor/ffmpeg/LICENSE.txt }
+          & vendor/ffmpeg/ffmpeg.exe -hide_banner -version | Select-Object -First 1
+          & vendor/ffmpeg/ffmpeg.exe -hide_banner -filters | Select-String "rubberband"
+
+      - name: Tes mesin (pakai FFmpeg Windows)
+        env:
+          SUARAKU_FFMPEG: vendor/ffmpeg/ffmpeg.exe
+          SUARAKU_FFPROBE: vendor/ffmpeg/ffprobe.exe
+          PYTHONUTF8: "1"
+        run: python tests/test_core.py
+
+      - name: Build exe (PyInstaller)
+        run: pyinstaller packaging/suaraku.spec --noconfirm --clean
+
+      - name: Masukkan FFmpeg ke paket
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse vendor/ffmpeg dist/SuaraKu/ffmpeg
+          "{0:N0} MB" -f ((Get-ChildItem dist/SuaraKu -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Cek mandiri exe (selftest)
+        shell: pwsh
+        run: |
+          $report = Join-Path $PWD "selftest.txt"
+          $p = Start-Process -FilePath "dist\SuaraKu\SuaraKu.exe" -ArgumentList @("--selftest", "`"$report`"") -PassThru
+          $null = $p.Handle
+          if (-not $p.WaitForExit(300000)) { $p.Kill(); throw "Selftest macet (lebih dari 5 menit)" }
+          if (Test-Path $report) { Get-Content $report } else { Write-Warning "Laporan selftest tidak ada" }
+          $log = Join-Path $env:TEMP "SuaraKu-log.txt"
+          if (Test-Path $log) { Write-Host "--- log ---"; Get-Content $log }
+          if (-not (Test-Path $report) -or -not (Select-String -Path $report -Pattern "SELFTEST OK" -Quiet)) {
+            throw "Selftest gagal"
+          }
+
+      - name: Pasang Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Buat installer
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe", "$env:ProgramFiles\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { throw "ISCC.exe tidak ditemukan" }
+          & $iscc.FullName "/DAppVersion=$env:VERSION" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup gagal" }
+          Get-ChildItem Output
+
+      - name: Simpan installer (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SuaraKu-Setup-${{ env.VERSION }}
+          path: Output/*.exe
+          retention-days: 30
+
+      - name: Terbitkan di Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: SuaraKu ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: Output/*.exe
+          body: |
+            Download **SuaraKu-Setup-${{ env.VERSION }}.exe** di bawah, lalu jalankan.
+
+            Kalau muncul layar biru "Windows protected your PC", klik **More info** → **Run anyway**
+            (muncul karena aplikasinya belum ditandatangani sertifikat berbayar).

@@ -1,0 +1,1 @@
+"""Tampilan (Qt) SuaraKu."""

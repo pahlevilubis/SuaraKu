@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+build/
+dist/
+Output/
+vendor/
+ffmpeg/
+*.spec.bak
+selftest.txt
+.venv/
