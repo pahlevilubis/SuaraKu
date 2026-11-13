@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 
 from ..core import effects, jobs, tools
 from ..core.effects import VoiceSettings
-from . import common
+from . import claude_ui, common
 from .common import FILTER_MEDIA, FilePicker, LabeledSlider, Player, TaskPanel, card, hint, page_header, row
 
 
@@ -124,6 +124,9 @@ class EffectPage(QWidget):
         l2.addLayout(grid)
         self.preset_hint = hint("")
         l2.addWidget(self.preset_hint)
+        self.ask = claude_ui.VoiceAsk(self._from_claude)
+        l2.addWidget(self.ask)
+        l2.addWidget(self.ask.note)
         self.manual_btn = QPushButton("Atur manual ▾")
         self.manual_btn.setCheckable(True)
         self.controls = VoiceControls()
@@ -195,6 +198,11 @@ class EffectPage(QWidget):
         self.preset_btns[key].setChecked(True)
         self.preset_hint.setText(p.hint)
         self.controls.set_settings(effects.preset_settings(key))
+
+    def _from_claude(self, s: VoiceSettings) -> None:
+        self.controls.set_settings(s)
+        self._manual_changed()
+        self.preset_hint.setText("Pengaturan dari Claude.")
 
     def _manual_changed(self) -> None:
         self.preset_hint.setText("Pengaturan manual.")

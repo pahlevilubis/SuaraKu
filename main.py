@@ -213,7 +213,102 @@ def selftest(report: str) -> int:
         check("Semua preset efek", _effects)
         check("Gabung video", _merge)
         check("Pemutar audio/video", _player)
+        def _wait(cond, timeout: float) -> bool:
+            end = time.time() + timeout
+            while time.time() < end:
+                app.processEvents()
+                if cond():
+                    return True
+                time.sleep(0.02)
+            return cond()
+
+        def _cut_ui():
+            from suaraku.core import edl
+            from suaraku.core import stt as _stt
+            from suaraku.ui.page_cut import CutPage
+            page = CutPage()
+            page.resize(1000, 1400)
+            page.show()
+            page.set_file(src_wav)
+            if not _wait(lambda: page.wave.duration > 0, 30):
+                raise RuntimeError("gelombang suara tidak termuat")
+            page.sel = (0.5, 1.0)
+            page._delete_sel()
+            page.wave.playhead = 2.0
+            page._split_here()
+            if page.removed != [(0.5, 1.0)] or page.splits != [2.0]:
+                raise RuntimeError(f"edit salah: {page.removed} {page.splits}")
+            page.wave.set_zoom(3, 1.5)
+            if page.wave.grab().isNull():
+                raise RuntimeError("gelombang tidak tergambar")
+            words = [_stt.Word(0.1, 0.4, " eh"), _stt.Word(0.6, 1.2, " halo"),
+                     _stt.Word(1.4, 2.0, " semua")]
+            page._words_ready(_stt.Transcript(segments=[_stt.Segment(0, 2, "x", words)]))
+            page._claude_done([(0, 0, "pengisi")])
+            page.tview.grab()
+            page._undo()
+            jl = edl.save_jobs(src_wav, page.removed, page.splits, info=page.info, fmt="mp3",
+                               per_piece=True, folder=str(tmp))
+            for j in jl:
+                jobs.Runner().run(j)
+            page.shutdown()
+            page.close()
+            return f"{len(jl)} bagian tersimpan"
+
+        def _merge_subs():
+            speech = os.environ.get("SUARAKU_TEST_SPEECH")
+            if not speech or not os.path.exists(speech):
+                return "dilewati (tanpa contoh suara)"
+            import subprocess as sp
+            from suaraku.ui.page_merge import MergePage
+            page = MergePage()
+            page.set_video(src_vid)
+            page.set_narration(speech)
+            page.subs_on.setChecked(True)
+            page.subs_style.setCurrentIndex(page.subs_style.findData("kotak"))
+            outs: list = []
+            page.task.finished.connect(outs.extend)
+            page._go()
+            if not _wait(lambda: bool(outs) or (page._prep is None and not page.task.busy
+                                                and page.task.status.objectName() == "Err"), 240):
+                raise RuntimeError("gabung + subtitle tidak selesai")
+            if not outs:
+                raise RuntimeError(f"gagal: {page.task.status.text()}")
+            out = outs[-1]
+            srt = Path(out).with_suffix(".srt")
+            if not srt.exists() or "-->" not in srt.read_text(encoding="utf-8"):
+                raise RuntimeError("file .srt tidak dibuat")
+
+            def frame(p, t):
+                r = sp.run([tools.ffmpeg_path(), "-loglevel", "error", "-ss", str(t), "-i", p,
+                            "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-s", "160x120",
+                            "-"], capture_output=True, creationflags=tools.NO_WINDOW)
+                return r.stdout
+
+            diffs = []
+            for t in (0.8, 1.5, 2.2):
+                a, b = frame(src_vid, t), frame(out, t)
+                if a and b and len(a) == len(b):
+                    diffs.append(sum(abs(x - y) for x, y in zip(a, b)) / len(a))
+            if not diffs or max(diffs) < 0.8:
+                raise RuntimeError(f"subtitle tidak terlihat di video (selisih {diffs})")
+            return f"selisih piksel {max(diffs):.1f} · {srt.name}"
+
+        def _claude_ui():
+            from suaraku.core import secret
+            from suaraku.ui.page_claude import ClaudePage
+            p = ClaudePage()
+            p._script_done({"judul": "Uji", "naskah": "Halo semua."})
+            p._cap_done({"judul": "J", "linkedin": "L", "wa_status": "W", "hashtag": ["#a"]})
+            enc = secret.protect("sk-ant-uji")
+            if secret.unprotect(enc) != "sk-ant-uji":
+                raise RuntimeError("penyimpanan API key gagal")
+            return enc.split(":")[0]
+
         check("Modul suara AI", _edge)
+        check("Menu Potong (Qt sungguhan)", _cut_ui)
+        check("Gabung + subtitle otomatis", _merge_subs)
+        check("Asisten Claude + kunci terenkripsi", _claude_ui)
         check("Perangkat audio", _mics)
         check("Mode Live (pemroses real-time)", _live)
         check("Suara → teks (Whisper)", _stt)

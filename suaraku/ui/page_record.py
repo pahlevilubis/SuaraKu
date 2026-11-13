@@ -126,6 +126,9 @@ class Teleprompter(QWidget):
         self.try_btn.toggled.connect(lambda on: self.start() if on else self.stop())
         top = QPushButton("Ke atas")
         top.clicked.connect(lambda: self.text.verticalScrollBar().setValue(0))
+        ask = QPushButton("✨ Bikin naskah dengan Claude")
+        ask.clicked.connect(lambda: common.navigate("claude"))
+        lay.addLayout(row(ask, None))
         lay.addWidget(self.text, 1)
         lay.addWidget(self.font_slider)
         lay.addWidget(self.speed)
@@ -166,6 +169,7 @@ class Teleprompter(QWidget):
 class RecordPage(QWidget):
     use_in_effect = Signal(str)
     use_in_merge = Signal(str)
+    use_in_cut = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -321,10 +325,12 @@ class RecordPage(QWidget):
         self.copy_btn.hide()
         self.copy_btn.clicked.connect(self._copy_text)
         self.to_fx = QPushButton("Pakai di Efek Suara →")
+        self.to_cut = QPushButton("Potong / rapikan →")
         self.to_merge = QPushButton("Pakai di Gabung Video →")
         self.open_btn = QPushButton("Buka folder")
-        for b in (self.to_fx, self.to_merge, self.open_btn):
+        for b in (self.to_fx, self.to_cut, self.to_merge, self.open_btn):
             b.setEnabled(False)
+        self.to_cut.clicked.connect(lambda: self.use_in_cut.emit(self.last_file))
         self.to_fx.clicked.connect(lambda: self.use_in_effect.emit(self.last_wav or self.last_file))
         self.to_merge.clicked.connect(lambda: self.use_in_merge.emit(self.last_file))
         self.open_btn.clicked.connect(lambda: common.show_in_folder(self.last_file))
@@ -332,7 +338,7 @@ class RecordPage(QWidget):
         l7.addWidget(self.task)
         l7.addWidget(self.stt_status)
         l7.addWidget(self.transcript)
-        l7.addLayout(row(self.copy_btn, self.to_fx, self.to_merge, None, self.open_btn))
+        l7.addLayout(row(self.copy_btn, self.to_fx, self.to_cut, self.to_merge, None, self.open_btn))
         lay.addWidget(c7)
 
         self.clock = QTimer(self)
@@ -521,7 +527,7 @@ class RecordPage(QWidget):
         self.last_file = outputs[-1]
         label = Path(self.last_file).name
         self.result_player.load(self.last_file, label=label)
-        for b in (self.to_fx, self.to_merge, self.open_btn):
+        for b in (self.to_fx, self.to_cut, self.to_merge, self.open_btn):
             b.setEnabled(True)
         if self._pending_stt:
             self._start_stt(self.last_wav)

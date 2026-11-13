@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
@@ -17,7 +14,9 @@ from ..core import tools
 from . import common
 from .common import FuncThread, TaskPanel, scroll_page
 from .page_about import AboutPage
+from .page_claude import ClaudePage
 from .page_convert import ConvertPage
+from .page_cut import CutPage
 from .page_effect import EffectPage
 from .page_live import LivePage
 from .page_merge import MergePage
@@ -27,14 +26,7 @@ from .page_tts import TtsPage
 
 
 def asset(name: str) -> str:
-    roots = [tools.app_dir() / "assets"]
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        roots.insert(0, Path(meipass) / "assets")
-    for r in roots:
-        if (r / name).exists():
-            return str(r / name)
-    return ""
+    return tools.asset_path(name)
 
 
 class MainWindow(QMainWindow):
@@ -48,23 +40,31 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(QSize(980, 640))
 
         self.convert = ConvertPage()
+        self.cut = CutPage()
         self.record = RecordPage()
         self.effect = EffectPage()
         self.transcribe = TranscribePage()
         self.tts = TtsPage()
         self.merge = MergePage()
         self.live = LivePage()
+        self.claude = ClaudePage()
         self.about = AboutPage()
         pages = [
             ("Konversi", "MP4 → MP3 & format lain", self.convert),
+            ("Potong", "Potong audio & video, buang hening", self.cut),
             ("Rekam Suara", "Manual / otomatis + teleprompter", self.record),
             ("Efek Suara", "Penyiar, Macho, Husky…", self.effect),
             ("Suara → Teks", "Ketik otomatis isi rekaman/video", self.transcribe),
             ("Suara AI", "Naskah dibacakan AI", self.tts),
             ("Gabung Video", "Video + narasi + musik", self.merge),
             ("Mode Live", "Ganti suara saat telepon", self.live),
+            ("✨ Asisten Claude", "Naskah, rapikan rekaman, caption", self.claude),
             ("Tentang", "Versi & tips", self.about),
         ]
+        self._pages = {"convert": self.convert, "cut": self.cut, "record": self.record,
+                       "effect": self.effect, "transcribe": self.transcribe, "tts": self.tts,
+                       "merge": self.merge, "live": self.live, "claude": self.claude,
+                       "about": self.about}
 
         side = QFrame()
         side.setObjectName("Sidebar")
@@ -116,6 +116,16 @@ class MainWindow(QMainWindow):
         self.record.use_in_merge.connect(lambda p: self._goto(self.merge, self.merge.set_narration, p))
         self.effect.use_in_merge.connect(lambda p: self._goto(self.merge, self.merge.set_narration, p))
         self.tts.use_in_merge.connect(lambda p: self._goto(self.merge, self.merge.set_narration, p))
+        self.record.use_in_cut.connect(lambda p: self._goto(self.cut, self.cut.set_file, p))
+        self.cut.use_in_merge.connect(lambda p: self._goto(self.merge, self.merge.set_narration, p))
+        self.cut.use_video_in_merge.connect(lambda p: self._goto(self.merge, self.merge.set_video, p))
+        self.claude.send_to_prompter.connect(
+            lambda t: self._goto(self.record, self.record.prompter.text.setPlainText, t))
+        self.claude.send_to_tts.connect(lambda t: self._goto(self.tts, self.tts.set_text, t))
+        self.transcribe.caption_request.connect(
+            lambda t: self._goto(self.claude, self.claude.set_source_text, t))
+        common.set_navigator(lambda name: self._goto(self._pages[name], lambda _x: None, "")
+                             if name in self._pages else None)
 
         self.nav.setCurrentRow(0)
         try:
@@ -136,6 +146,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, e):  # noqa: N802
         self.record.shutdown()
         self.live.shutdown()
+        self.cut.shutdown()
         for panel in self.findChildren(TaskPanel):
             if panel.thread:
                 panel.thread.cancel()

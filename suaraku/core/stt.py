@@ -112,10 +112,18 @@ def load_audio(path: str):
 
 
 @dataclass
+class Word:
+    start: float
+    end: float
+    text: str
+
+
+@dataclass
 class Segment:
     start: float
     end: float
     text: str
+    words: list[Word] = field(default_factory=list)
 
 
 @dataclass
@@ -123,6 +131,10 @@ class Transcript:
     language: str = ""
     duration: float = 0.0
     segments: list[Segment] = field(default_factory=list)
+
+    @property
+    def words(self) -> list[Word]:
+        return [w for s in self.segments for w in s.words]
 
     @property
     def text(self) -> str:
@@ -163,9 +175,18 @@ def _srt_time(sec: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+# Contoh kalimat "apa adanya" supaya Whisper ikut menulis eh/emm (untuk dirapikan).
+VERBATIM_PROMPT = {
+    "id": "Eh, jadi, emm... ya, gitu. Hmm, oke.",
+    "en": "Um, so, uh... yeah, like. Hmm, okay.",
+    None: "Eh, emm... um, uh, hmm.",
+}
+
+
 def transcribe(path: str, model_key: str = "base", language: str | None = None,
                on_progress: Callable[[float], None] | None = None,
-               cancel: threading.Event | None = None) -> Transcript:
+               cancel: threading.Event | None = None, words: bool = False,
+               verbatim: bool = False) -> Transcript:
     audio = load_audio(path)
     model = _load(model_key)
     duration = audio.size / 16000.0
@@ -173,12 +194,15 @@ def transcribe(path: str, model_key: str = "base", language: str | None = None,
         segments, info = model.transcribe(
             audio, language=language, task="transcribe", beam_size=5,
             vad_filter=True, vad_parameters={"min_silence_duration_ms": 500},
+            word_timestamps=words,
+            initial_prompt=VERBATIM_PROMPT.get(language, VERBATIM_PROMPT[None]) if verbatim else None,
         )
         result = Transcript(language=getattr(info, "language", "") or "", duration=duration)
         for seg in segments:
             if cancel is not None and cancel.is_set():
                 raise SttCancelled()
-            result.segments.append(Segment(float(seg.start), float(seg.end), seg.text))
+            ws = [Word(float(w.start), float(w.end), w.word) for w in (seg.words or [])] if words else []
+            result.segments.append(Segment(float(seg.start), float(seg.end), seg.text, ws))
             if on_progress and duration > 0:
                 on_progress(min(1.0, float(seg.end) / duration))
     except (SttCancelled, SttError):

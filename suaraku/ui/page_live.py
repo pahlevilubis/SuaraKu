@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from ..core import effects, live
 from ..core.effects import VoiceSettings
-from . import audio, common
+from . import audio, claude_ui, common
 from .common import card, hint, page_header, row
 from .page_effect import VoiceControls
 
@@ -196,6 +196,9 @@ class LivePage(QWidget):
             self.preset_btns[key] = b
             grid.addWidget(b, i // 4, i % 4)
         l3.addLayout(grid)
+        self.ask = claude_ui.VoiceAsk(self._from_claude)
+        l3.addWidget(self.ask)
+        l3.addWidget(self.ask.note)
         self.manual_btn = QPushButton("Atur manual ▾")
         self.manual_btn.setCheckable(True)
         self.controls = VoiceControls()
@@ -309,6 +312,10 @@ class LivePage(QWidget):
         self.controls.set_settings(effects.preset_settings(key))
         common.settings().setValue("live_preset", key)
         self._restart.start()
+
+    def _from_claude(self, s: VoiceSettings) -> None:
+        self.controls.set_settings(s)
+        self._manual_changed()
 
     def _manual_changed(self) -> None:
         checked = self.group.checkedButton()

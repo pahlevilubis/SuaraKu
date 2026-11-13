@@ -41,6 +41,7 @@ class Job:
     output: str
     duration: float          # perkiraan durasi hasil (detik) untuk progress bar
     cleanup: list[str] = field(default_factory=list)
+    cwd: str | None = None   # folder kerja FFmpeg (dipakai subtitle)
 
     def command(self) -> list[str]:
         return [tools.ffmpeg_path(), *self.args]
@@ -213,6 +214,7 @@ class MergeOptions:
     keep_original: bool = False    # False = suara asli video dihapus
     original_volume: float = 1.0
     scale_720: bool = False
+    subtitles_ass: str | None = None   # path subs.ass (folder berisi fonts/)
 
 
 def merge(o: MergeOptions, info: tools.MediaInfo | None = None,
@@ -271,7 +273,8 @@ def merge(o: MergeOptions, info: tools.MediaInfo | None = None,
         mix_inputs.append("[mus]")
         idx += 1
 
-    if not mix_inputs:
+    subs = o.subtitles_ass
+    if not mix_inputs and not subs:
         out = o.output
         job = mute_video(o.video, out, info)
         job.label = "Gabung video"
@@ -279,17 +282,29 @@ def merge(o: MergeOptions, info: tools.MediaInfo | None = None,
 
     if len(mix_inputs) == 1:
         chains.append(f"{mix_inputs[0]}apad,alimiter=limit=0.97:level=false[aout]")
-    else:
+    elif mix_inputs:
         chains.append("".join(mix_inputs)
                       + f"amix=inputs={len(mix_inputs)}:duration=longest"
                         ":dropout_transition=0:normalize=0,apad,"
                         "alimiter=limit=0.97:level=false[aout]")
 
-    args += ["-filter_complex", ";".join(chains),
-             "-map", "0:v:0", *_video_args(info, o.scale_720),
-             "-map", "[aout]", "-c:a", "aac", "-b:a", "192k",
+    vmap = ["-map", "0:v:0", *_video_args(info, o.scale_720)]
+    if subs:
+        vf = []
+        if o.scale_720:
+            vf.append("scale=-2:'min(720,ih)'")
+        # path relatif terhadap cwd (folder subs) supaya tidak repot escape path Windows
+        vf += [f"subtitles=filename={Path(subs).name}:fontsdir=fonts", "format=yuv420p"]
+        chains.append("[0:v:0]" + ",".join(vf) + "[vout]")
+        vmap = ["-map", "[vout]", *_h264(21)]
+    amap = ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"] if mix_inputs else ["-an"]
+
+    args += ["-filter_complex", ";".join(chains), *vmap, *amap,
              "-t", f"{dur:.3f}", "-movflags", "+faststart", o.output]
-    return Job("Gabung video + suara", args, o.output, dur)
+    job = Job("Gabung video + suara", args, o.output, dur)
+    if subs:
+        job.cwd = str(Path(subs).parent)
+    return job
 
 
 # ---------------------------------------------------------------- rekaman mentah → WAV
@@ -349,7 +364,7 @@ class Runner:
         self._proc = subprocess.Popen(
             job.command(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
-            creationflags=tools.NO_WINDOW,
+            creationflags=tools.NO_WINDOW, cwd=job.cwd,
         )
         err_lines: list[str] = []
 

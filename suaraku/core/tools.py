@@ -27,6 +27,19 @@ def app_dir() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def asset_path(rel: str) -> str:
+    """Cari file di folder assets (exe: _internal/assets, kode: <repo>/assets)."""
+    roots = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        roots.append(Path(meipass) / "assets")
+    roots.append(app_dir() / "assets")
+    for r in roots:
+        if (r / rel).exists():
+            return str(r / rel)
+    return ""
+
+
 def _candidates(name: str) -> list[Path]:
     exe = name + (".exe" if IS_WINDOWS else "")
     roots = [app_dir()]
@@ -195,3 +208,36 @@ def parse_time(text: str) -> float | None:
     if total < 0:
         raise ValueError(f"Waktu tidak boleh negatif: {text}")
     return total
+
+
+@lru_cache(maxsize=None)
+def _filter_script_flag() -> str:
+    """FFmpeg 7.1+ memakai '-/filter_complex <file>', versi lama '-filter_complex_script'."""
+    import tempfile
+    tmp = Path(tempfile.gettempdir()) / "SuaraKu-fg-probe.txt"
+    tmp.write_text("anullsrc=d=0.05[a]", encoding="utf-8")
+    try:
+        for flag in ("-/filter_complex", "-filter_complex_script"):
+            res = run([ffmpeg_path(), "-hide_banner", "-loglevel", "error", flag, str(tmp),
+                       "-map", "[a]", "-f", "null", "-"], timeout=30)
+            if res.returncode == 0:
+                return flag
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    return "-filter_complex_script"
+
+
+def filter_graph_args(graph: str, script_path: str | None = None) -> tuple[list[str], str | None]:
+    """Argumen untuk filter graph. Graph panjang ditulis ke file (batas baris perintah Windows).
+
+    Kembalikan (argumen, path file sementara atau None).
+    """
+    if len(graph) < 6000:
+        return ["-filter_complex", graph], None
+    import tempfile
+    path = script_path or str(Path(tempfile.gettempdir()) / f"SuaraKu-fg-{os.getpid()}-{id(graph)}.txt")
+    Path(path).write_text(graph, encoding="utf-8")
+    return [_filter_script_flag(), path], path

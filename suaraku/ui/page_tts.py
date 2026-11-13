@@ -104,6 +104,9 @@ class TtsPage(QWidget):
                            "SuaraKu supaya pakai versi terbaru."))
         lay.addStretch(1)
 
+    def set_text(self, text: str) -> None:
+        self.text.setPlainText(text)
+
     def _set_voices(self, voices: list[tts.Voice]) -> None:
         current = self.voice.currentData()
         self.voice.clear()

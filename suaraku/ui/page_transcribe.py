@@ -61,6 +61,8 @@ def language_combo() -> QComboBox:
 
 
 class TranscribePage(QWidget):
+    caption_request = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.thread: SttThread | None = None
@@ -119,9 +121,11 @@ class TranscribePage(QWidget):
         self.save_btn.clicked.connect(self._save_edit)
         self.open_btn = QPushButton("Buka folder")
         self.open_btn.clicked.connect(lambda: common.show_in_folder(self.txt_path))
-        for b in (self.copy_btn, self.save_btn, self.open_btn):
+        self.cap_btn = QPushButton("✨ Bikin caption dengan Claude")
+        self.cap_btn.clicked.connect(lambda: self.caption_request.emit(self.text.toPlainText().strip()))
+        for b in (self.copy_btn, self.save_btn, self.open_btn, self.cap_btn):
             b.setEnabled(False)
-        l3.addLayout(row(self.copy_btn, self.save_btn, None, self.open_btn))
+        l3.addLayout(row(self.copy_btn, self.save_btn, self.cap_btn, None, self.open_btn))
         lay.addWidget(c3)
         lay.addWidget(hint("Hasil disimpan otomatis di sebelah file aslinya: <nama>.txt dan "
                            "<nama>.srt. Mesin Cepat cukup untuk catatan; pilih Akurat kalau "
@@ -215,7 +219,7 @@ class TranscribePage(QWidget):
         except OSError as exc:
             self.txt_path = ""
             self.status.setText(f"Selesai, tapi gagal menyimpan file: {exc}")
-        for b in (self.copy_btn, self.save_btn, self.open_btn):
+        for b in (self.copy_btn, self.save_btn, self.open_btn, self.cap_btn):
             b.setEnabled(True)
 
     def _copy(self) -> None:

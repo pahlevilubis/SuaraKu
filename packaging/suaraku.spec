@@ -15,6 +15,7 @@ hidden = collect_submodules("edge_tts") + collect_submodules("suaraku")
 datas = [
     (os.path.join(ROOT, "assets", "icon.png"), "assets"),
     (ICON, "assets"),
+    (os.path.join(ROOT, "assets", "fonts"), os.path.join("assets", "fonts")),
 ]
 datas += collect_data_files("certifi")
 binaries = []

@@ -63,12 +63,30 @@ def temp_file(prefix: str, ext: str) -> str:
 
 
 def clean_temp() -> None:
+    import shutil
     if _TMP.exists():
         for f in _TMP.iterdir():
             try:
-                f.unlink()
+                if f.is_dir():
+                    shutil.rmtree(f, ignore_errors=True)
+                else:
+                    f.unlink()
             except OSError:
                 pass
+
+
+# Pindah menu dari mana saja: MainWindow mengisi ini dengan fungsi navigasi.
+_NAVIGATE: Callable[[str], None] | None = None
+
+
+def set_navigator(fn: Callable[[str], None]) -> None:
+    global _NAVIGATE
+    _NAVIGATE = fn
+
+
+def navigate(page: str) -> None:
+    if _NAVIGATE:
+        _NAVIGATE(page)
 
 
 def bind_setting(widget, key: str, default) -> None:

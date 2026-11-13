@@ -46,14 +46,18 @@ class AboutPage(QWidget):
             "4. Di Gabung Video, hapus suara asli, pasang narasi, tambah musik pelan. Centang "
             "720p supaya ringan diunggah.",
             "5. Kalau malas rekam, pakai Suara AI.",
-            "6. Butuh caption? Menu Suara → Teks membuat teks dan subtitle (.srt) dari videomu.",
+            "6. Rekaman banyak “eh/emm” atau ngulang kalimat? Buka Potong → Rapikan dengan Claude, "
+            "atau Cari & buang hening.",
+            "7. Centang Subtitle di Gabung Video — kebanyakan orang menonton tanpa suara.",
+            "8. Minta Asisten Claude bikin caption LinkedIn & status WA dari isi videomu.",
         ]:
             l2.addWidget(hint(t))
         lay.addWidget(c2)
 
         c3, l3 = card("Lisensi")
         l3.addWidget(hint("SuaraKu memakai FFmpeg (ffmpeg.org, lisensi GPL), Qt/PySide6 (LGPL), "
-                          "edge-tts, faster-whisper + model Whisper (MIT). Mode Live memakai "
-                          "VB-CABLE dari vb-audio.com (dipasang terpisah)."))
+                          "edge-tts, faster-whisper + model Whisper (MIT), font DejaVu (bebas). Mode "
+                          "Live memakai VB-CABLE dari vb-audio.com (dipasang terpisah). Fitur Claude "
+                          "memakai Claude API dari Anthropic dengan API key milikmu."))
         lay.addWidget(c3)
         lay.addStretch(1)

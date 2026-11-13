@@ -9,12 +9,30 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..core import effects, jobs
+from ..core import effects, jobs, stt, subs
 from . import common
 from .common import (
-    FILTER_AUDIO, FILTER_MEDIA, FILTER_VIDEO, FilePicker, LabeledSlider, Player, TaskPanel, card,
-    hint, page_header, row,
+    FILTER_AUDIO, FILTER_MEDIA, FILTER_VIDEO, FilePicker, FuncThread, LabeledSlider, Player,
+    TaskPanel, card, hint, page_header, row,
 )
+from .page_transcribe import current_model, language_combo
+
+
+def _make_subtitles(src: str, offset: float, language: str | None, width: int, height: int,
+                    style: str, size: str, srt_out: str) -> str:
+    """Jalan di thread: transkrip per kata → subs.ass (+ simpan .srt di sebelah hasil)."""
+    key = current_model()
+    if not stt.model_path(key):
+        raise RuntimeError("Mesin suara → teks belum terpasang.")
+    t = stt.transcribe(src, key, language, words=True)
+    caps = subs.build_captions(t, offset=offset, max_chars=32 if height > width else 42)
+    if not caps:
+        raise RuntimeError("Tidak ada ucapan yang terdengar untuk dijadikan subtitle.")
+    try:
+        Path(srt_out).write_text(subs.to_srt(caps), encoding="utf-8")
+    except OSError:
+        pass
+    return subs.prepare_dir(caps, width, height, style, size)
 
 
 class MergePage(QWidget):
@@ -79,9 +97,31 @@ class MergePage(QWidget):
         l3.addLayout(row(self.loop, self.fade, self.duck, None))
         lay.addWidget(c3)
 
-        c4, l4 = card("4. Hasil")
+        c5, l5 = card("4. Subtitle otomatis (opsional)",
+                      "Kebanyakan orang menonton video LinkedIn/WA tanpa suara — subtitle bikin "
+                      "pesanmu tetap sampai. Teks diambil dari narasi (atau suara asli video) secara "
+                      "offline, lalu ditempel ke video. File .srt juga disimpan, bisa diunggah ke "
+                      "LinkedIn sebagai caption terpisah.")
+        self.subs_on = QCheckBox("Tambah subtitle")
+        self.subs_style = QComboBox()
+        for k, label in subs.STYLES.items():
+            self.subs_style.addItem(label, k)
+        self.subs_size = QComboBox()
+        for k in subs.SIZES:
+            self.subs_size.addItem(k.capitalize(), k)
+        self.subs_size.setCurrentIndex(1)
+        self.subs_lang = language_combo()
+        l5.addLayout(row(self.subs_on, self.subs_style, self.subs_size, QLabel("Bahasa"),
+                         self.subs_lang, None))
+        common.bind_setting(self.subs_on, "merge_subs", False)
+        common.bind_setting(self.subs_style, "merge_subs_style", "putih")
+        common.bind_setting(self.subs_size, "merge_subs_size", "sedang")
+        lay.addWidget(c5)
+
+        c4, l4 = card("5. Hasil")
         self.small = QCheckBox("Kecilkan ke 720p (lebih ringan untuk WA / LinkedIn)")
         l4.addWidget(self.small)
+        self._prep: FuncThread | None = None
         self.go = QPushButton("Gabungkan")
         self.go.setObjectName("Primary")
         self.go.clicked.connect(self._go)
@@ -146,12 +186,54 @@ class MergePage(QWidget):
             scale_720=self.small.isChecked(),
         )
         try:
-            job = jobs.merge(o, info=self.video.info)
+            jobs.merge(o, info=self.video.info)   # cek pengaturan dulu
         except Exception as exc:
             common.error_box(self, str(exc))
             return
         self.player.unload()
-        self.task.start([job], "Menggabungkan…")
+        if not self.subs_on.isChecked():
+            self.task.start([jobs.merge(o, info=self.video.info)], "Menggabungkan…")
+            return
+        # sumber ucapan: narasi (digeser offset) atau suara asli video
+        if o.narration:
+            src, offset = o.narration, o.narration_offset
+        elif self.video.info.has_audio:
+            src, offset = vpath, 0.0
+        else:
+            common.error_box(self, "Tidak ada suara untuk dijadikan subtitle. Pasang narasi dulu.")
+            return
+        if self._prep is not None:
+            return
+        info = self.video.info
+        srt_out = str(Path(o.output).with_suffix(".srt"))
+        self.go.setEnabled(False)
+        self.task.status.setText("Membuat subtitle (mengetik suara jadi teks)…")
+        t = FuncThread(_make_subtitles, src, offset, self.subs_lang.currentData(), info.width,
+                       info.height, self.subs_style.currentData(), self.subs_size.currentData(),
+                       srt_out, parent=self)
+
+        def ready(ass: str) -> None:
+            o.subtitles_ass = ass
+            try:
+                self.task.start([jobs.merge(o, info=info)], "Menggabungkan + subtitle…")
+            except Exception as exc:
+                common.error_box(self, str(exc))
+
+        def failed(msg: str) -> None:
+            self.task._set_status("Gagal membuat subtitle.", "Err")
+            common.error_box(self, msg)
+
+        def fin() -> None:
+            self._prep = None
+            if not self.task.busy:
+                self.go.setEnabled(True)
+            t.deleteLater()
+
+        t.done.connect(ready)
+        t.failed.connect(failed)
+        t.finished.connect(fin)
+        self._prep = t
+        t.start()
 
     def _done(self, outputs: list) -> None:
         if outputs:
